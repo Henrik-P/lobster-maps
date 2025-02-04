@@ -2,56 +2,75 @@
 
 
 library(sf)
-#library(dplyr)
 library(ggplot2)
+library(tmap)
+library(leaflet)
 ###################################################
 
 
 
 # check layers in lobster geopackage
 st_layers(
-  "data/spatial/lobster maps.gpkg"
+  "data/spatial/lobster_layers.gpkg"
   )
 
+  
 # read different layers
-study_area = st_read(
-  dsn = "data/spatial/lobster maps.gpkg",
-  layer = "survey study area Lysekil"
+
+# coast line from Sjökort
+study_area_line = st_read(
+  dsn = "data/spatial/lobster_layers.gpkg",
+  layer = "study_area_LL_line"
   )
 
+# coast polygon from Europe_coastline.shp 
 west_coast = st_read(
-  dsn = "data/spatial/lobster maps.gpkg",
-  layer = "Swedish westcoast"
+  dsn = "data/spatial/lobster_layers.gpkg",
+  layer = "west_coast"
   )
 
+# OpenStreetMap data of the land polygons
+west_coast_osm = st_read(
+  dsn = "data/spatial/lobster_layers.gpkg",
+  layer = "west_coast_osm"
+)
+
+# Kåvra MPA, manually created
 kaavra = st_read(
-  dsn = "data/spatial/lobster maps.gpkg",
+  dsn = "data/spatial/lobster_layers.gpkg",
   layer = "kaavra_MPA"
   )
 
 
 # check and set crs
-st_crs(study_area)
+st_crs(study_area_line)
+st_crs(west_coast_osm)
+
+st_crs(west_coast)
+west_coast = st_transform(west_coast, 4326)
 st_crs(west_coast)
 
-# west_coast = st_transform(west_coast, 4326)
-# st_crs(west_coast)
+
+# crop west coast
+# check bounding box
+st_bbox(west_coast_osm)
+
+# create bounding box
+bbox = c(
+  xmin = 11, ymin = 58,
+  xmax = 12, ymax = 58.5)
+
+LL_osm= st_crop(west_coast_osm, bbox)
 
 # simplify west coast
 west_coast_simple = west_coast |>
   st_simplify(dTolerance = 500)
 
-# crop map
-bbox = c(
-  xmin = 11, ymin = 58,
-  xmax = 12, ymax = 58.5)
-
-west_coast= st_crop(west_coast, bbox)
-
+st_crs(west_coast_simple)
 
 
 # create Kåvra polygon
-# Only for demo; layer already saved in as layer)
+# Only for demo; layer already saved in as layer in GPKG, kaavra_MPA)
 # coordinates Kåvra MPA
 # see email 2024-03-12 08:58
 
@@ -75,7 +94,8 @@ kaavra_sf = st_sf(st_sfc(st_polygon(list(kaavra_m))))
 st_crs(kaavra_sf) = 4326
 
 
-# write
+# write sf object to file
+# here as a layer in a geopackage
 st_write(
   obj = kaavra_sf,
   dsn = "data/spatial/lobster maps.gpkg",
@@ -98,6 +118,7 @@ capt = fread(
   encoding = "UTF-8" # encoding set to UTF-8 when writing.
 )
 
+
 # select rows with coord and relevant columns
 capt = capt[
   !is.na(lat_deg) & !is.na(lon_deg),
@@ -116,7 +137,6 @@ capt_sf = st_as_sf(
 
 
 # station
-
 
 station = fread(
   "data/station/lobster_station.csv",
@@ -138,67 +158,135 @@ station_sf = st_as_sf(
 #############
 
 
-
-# base map, study area
+# base map, west coast simple
+# ggplot
 ggplot() +
 geom_sf(
-  data = land,
+  data = west_coast_simple,
   fill = "grey70") +
   theme_classic()
 
-# limits
-ggplot() +
-geom_sf(
-  data = land,
-  fill = "grey70") +
-coord_sf(xlim = c(11.3, 11.45),
-         ylim = c(58.25, 58.37))
+# tmap
+tm_shape(shp = west_coast_simple) +
+    tm_polygons() +
+    tm_graticules(
+      lines = FALSE
+    )
 
 
-# base map, land + Kåvra
+
+# base map, Lysekil study area
+# set limits
+# ggplot
 ggplot() +
 geom_sf(
-  data = land_ll_simple,
-  fill = "grey70") +
+  data = LL_osm) +
+coord_sf(
+  xlim = c(11.3, 11.45),
+  ylim = c(58.27, 58.37)) +
+theme_classic()
+
+
+# add layers
+# study area + Kåvra
+# ggplot
+ggplot() +
 geom_sf(
-  data = kaavra_sf,
+  data = LL_osm) +
+geom_sf(
+  data = kaavra,
   fill = "blue", alpha = 0.1) +
 coord_sf(xlim = c(11.3, 11.4),
-         ylim = c(58.3, 58.35))
+         ylim = c(58.3, 58.35)) +
+theme_classic()
+
+# tmap
+tm_shape(
+  shp = LL_osm,
+  bbox = st_bbox(
+    c(xmin = 11.3, xmax = 11.4, ymin = 58.3, ymax = 58.35), crs = 4326)) +
+    tm_polygons() +
+
+tm_shape(
+  shp = kaavra) +
+  tm_polygons(
+    fill = "blue",
+    fill_alpha = 0.1) +
+  tm_graticules(
+      lines = FALSE
+    )
 
 
-# land and stations
+
+
+# study area + kåvra + stations
 ggplot() +
 geom_sf(
-  data = land_ll_simple,
-  fill = "grey70") +
+  data = LL_osm) +
 geom_sf(
-  data = kaavra_sf,
+  data = kaavra,
   fill = "blue", alpha = 0.1) +
 geom_sf(
   data = subset(station_sf, site == "Kåvra")[c(1, 100, 200, 400), ],
   color = "red") +
 coord_sf(xlim = c(11.3, 11.4),
-         ylim = c(58.3, 58.35))
+         ylim = c(58.3, 58.35)) +
+theme_classic()
 
 
 # map point size to number of lobsters
 ggplot() +
 geom_sf(
-  data = land_ll_simple,
+  data = LL_osm,
   fill = "grey70") +
+geom_sf(
+  data = kaavra,
+  fill = "blue", alpha = 0.1) +
 geom_sf(
   data = subset(station_sf, site == "Kåvra" & n_lob > 0)[c(1, 100, 200, 400), ],
   aes(size = n_lob),
   color = "red") +
 coord_sf(xlim = c(11.3, 11.4),
-         ylim = c(58.3, 58.35))
+         ylim = c(58.3, 58.35)) +
+theme_classic()
 
+
+m = tm_shape(
+  shp = LL_osm,
+  bbox = st_bbox(
+    c(xmin = 11.3, xmax = 11.4, ymin = 58.3, ymax = 58.35), crs = 4326)) +
+    tm_polygons() +
+
+tm_shape(
+  shp = kaavra) +
+  tm_polygons(
+    fill = "blue",
+    fill_alpha = 0.1) +
+
+tm_shape(
+  shp = subset(station_sf, site == "Kåvra" & n_lob > 0)[c(1, 100, 200, 400), ]) +
+  tm_symbols(
+    fill = "red",
+    size = "n_lob"
+    ) +
+
+tm_graticules(
+  lines = FALSE
+    )
+
+m
 ##########
 
 
-# interactive map of station
+# interactive map
+tmap_mode("view")
+m
 
+
+
+
+
+# leaflef
 # color palette
 pal = colorNumeric(
   palette = "magma",
@@ -236,7 +324,8 @@ addPolygons(
 # movement
 
 # select individuals which have been captured >= 2
-recap = capt[ , if(.N >= 2) .(year, date_haul, site, lat_deg, lon_deg), by = ind_id]
+recap = capt[
+  if(.N >= 2) .(year, date_haul, site, lat_deg, lon_deg), by = ind_id]
 
 setorder(recap, ind_id, date_haul)
 
@@ -262,11 +351,15 @@ recap[ , (to_cols) := shift(.SD, 1, type = "lead"),
 # remove last NA row by tag
 recap = recap[ , .SD[-.N], by = ind_id]
 
+
+# plot 4 lobsters
 ggplot() +
-  geom_sf(data = land_ll_simple,) +
+  geom_sf(data = study_area) +
   geom_curve(
     data = recap[ind_id %in% sample(unique(ind_id), 4)],
-    aes(x = lon_deg, y = lat_deg, xend = lon_deg_to, yend = lat_deg_to),
-    arrow = arrow(length = unit(0.01, "npc"))) +
-  coord_sf(xlim = c(11.3, 11.45),
-           ylim = c(58.2, 58.4))
+    aes(x = lon_deg, y = lat_deg, xend = lon_deg_next, yend = lat_deg_next),
+    arrow = arrow(length = unit(0.01, "npc")),
+    color = "blue") +
+  coord_sf(xlim = c(11.36, 11.39),
+         ylim = c(58.32, 58.34)) +
+  theme_classic()
