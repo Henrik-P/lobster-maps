@@ -4,7 +4,7 @@
 library(sf)
 library(ggplot2)
 library(tmap)
-library(leaflet)
+# library(leaflet)
 ###################################################
 
 
@@ -70,7 +70,7 @@ st_crs(west_coast_simple)
 
 
 # create Kåvra polygon
-# Only for demo; layer already saved in as layer in GPKG, kaavra_MPA)
+# Note: Only for demo; layer already saved in as layer in GPKG, kaavra_MPA)
 # coordinates Kåvra MPA
 # see email 2024-03-12 08:58
 
@@ -277,14 +277,24 @@ tm_graticules(
 m
 ##########
 
+# raster
+
+tm_shape(west_coast) +
+ tm_polygons() +
+tm_shape(land) +
+  tm_raster("cover")
+
+
 
 # interactive map
+# tmap
 tmap_mode("view")
 m
 
 
+m = tm_shape(shp = kaavra) + tm_polygons()
 
-
+tmap_mode("plot")
 
 # leaflef
 # color palette
@@ -321,29 +331,35 @@ addPolygons(
 
 ################################
 
+
 # movement
 
-# select individuals which have been captured >= 2
-recap = capt[
+# two different subsets of individuals
+# 1. select individuals which have been captured >= 2
+recap = capt[ ,
   if(.N >= 2) .(year, date_haul, site, lat_deg, lon_deg), by = ind_id]
 
 setorder(recap, ind_id, date_haul)
 
-# test create "to variables"
-# d = data.table(tag = rep(1:3, c(2, 3, 2)),
-#                date = c(1:2, 1:3, 1:2),
-#                lat = 1:7, lon = 7:1)
-# 
-# cols = c("date", "lat", "lon")
-# to_cols = paste("to", cols, sep = "_")
-# 
-# d[ , (to_cols) := data.table::shift(.SD, 1, type = "lead"),
-#    .SDcols = cols,
-#    by = tag]
+
+# 2. select individuals which
+# 1 captured >= 2
+# 2 first site Kåvra
+# 3 at least one non-SLU capt
+
+# TODO missing site at first capture is wrong (wrong date of non-SLU catch?)
+# TODO missing site at capture which must by SLU survey, according to date.
+
+# sort by individual and date
+setorder(capt, ind_id, date_haul)
+
+recap = capt[ ,
+  if(.N >= 2 & !is.na(first(site)) & first(site) == "Kåvra" & any(data_source != "slu_survey")) .(year, date_haul, site, lat_deg, lon_deg), by = ind_id]
+
 
 cols = c("date_haul", "lat_deg", "lon_deg")
 to_cols = paste(cols, "next", sep = "_")
-
+to_cols
 recap[ , (to_cols) := shift(.SD, 1, type = "lead"),
              .SDcols = cols,
              by = ind_id]
@@ -353,13 +369,22 @@ recap = recap[ , .SD[-.N], by = ind_id]
 
 
 # plot 4 lobsters
+set.seed(3)
 ggplot() +
-  geom_sf(data = study_area) +
-  geom_curve(
-    data = recap[ind_id %in% sample(unique(ind_id), 4)],
+
+geom_sf(data = west_coast_osm) +
+coord_sf(
+    xlim = c(11.2, 11.8),
+    ylim = c(58.2, 58.55)) +
+geom_curve(
+    #data = recap[ind_id %in% sample(unique(ind_id), 20)],
+    data = recap[lat_deg != lat_deg_next],
     aes(x = lon_deg, y = lat_deg, xend = lon_deg_next, yend = lat_deg_next),
     arrow = arrow(length = unit(0.01, "npc")),
     color = "blue") +
-  coord_sf(xlim = c(11.36, 11.39),
-         ylim = c(58.32, 58.34)) +
+ 
   theme_classic()
+
+
+
+
